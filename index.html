@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Inspección 1131 - Registro Documental</title>
+    
+    <!-- PWA Configuration -->
+    <meta name="theme-color" content="#004582">
+    <meta name="description" content="Sistema de registro documental para Inspección 1131">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Insp. 1131">
+    
+    <link rel="manifest" href="manifest.json">
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    
+    <!-- PDF Export Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <p id="loading-text">Cargando...</p>
+    </div>
+
+    <!-- Messages -->
+    <div id="message-success" class="message message-success"></div>
+    <div id="message-error" class="message message-error"></div>
+
+    <!-- ========== LOGIN SCREEN ========== -->
+    <div id="login-screen" class="screen active">
+        <div class="header">
+            <div class="logo-container">
+                <div class="institucional">
+                    <h1>Inspección 1131</h1>
+                    <h2>Región 13 - Morón</h2>
+                </div>
+            </div>
+        </div>
+
+        <div class="login-container">
+            <div class="login-card">
+                <div class="login-tabs">
+                    <button class="login-tab active" onclick="switchTab('login')">Iniciar Sesión</button>
+                    <button class="login-tab" onclick="switchTab('register')">Registrarse</button>
+                </div>
+
+                <!-- Login Form -->
+                <form id="login-form" class="auth-form">
+                    <div class="form-grid">
+                        <div>
+                            <label>Email</label>
+                            <input type="email" id="login-email" placeholder="usuario@ejemplo.com" required>
+                        </div>
+                        <div>
+                            <label>Contraseña</label>
+                            <input type="password" id="login-password" placeholder="••••••••" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <span>Ingresar</span>
+                        </button>
+                    </div>
+                </form>
+
+                <!-- Register Form -->
+                <form id="register-form" class="auth-form" style="display:none;">
+                    <div class="form-grid">
+                        <div>
+                            <label>Nombre Completo</label>
+                            <input type="text" id="register-name" placeholder="Juan Pérez" required>
+                        </div>
+                        <div>
+                            <label>Email</label>
+                            <input type="email" id="register-email" placeholder="usuario@ejemplo.com" required>
+                        </div>
+                        <div>
+                            <label>Contraseña</label>
+                            <input type="password" id="register-password" placeholder="••••••••" minlength="6" required>
+                        </div>
+                        <div>
+                            <label>Rol</label>
+                            <select id="register-role" required>
+                                <option value="user">Usuario</option>
+                                <option value="supervisor">Supervisor</option>
+                                <option value="admin">Administrador</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <span>Crear Cuenta</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== MAIN SCREEN ========== -->
+    <div id="main-screen" class="screen">
+        <div class="header">
+            <div class="logo-container">
+                <div class="institucional">
+                    <h1>Inspección 1131</h1>
+                    <h2 id="user-name-header">Usuario</h2>
+                </div>
+            </div>
+        </div>
+
+        <div class="content-container">
+            <!-- Search and Filter -->
+            <div class="search-container">
+                <div class="search-box">
+                    <input type="text" id="search-input" placeholder="🔍 Buscar documentos..." 
+                           oninput="applyFilters()">
+                </div>
+                <div class="filter-controls">
+                    <select id="filter-type" onchange="applyFilters()">
+                        <option value="">Todos los tipos</option>
+                        <option value="nota">Nota</option>
+                        <option value="informe">Informe</option>
+                        <option value="expediente">Expediente</option>
+                        <option value="acta">Acta</option>
+                        <option value="circular">Circular</option>
+                        <option value="cap">CAP</option>
+                        <option value="otro">Otro</option>
+                    </select>
+                    <button class="btn btn-secondary" onclick="showStats()">
+                        📊 Estadísticas
+                    </button>
+                    <button class="btn btn-secondary" onclick="exportToCSV()">
+                        📥 Exportar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Records List -->
+            <div id="registros-container" class="registros-container"></div>
+
+            <!-- Floating Action Button -->
+            <button class="fab" onclick="openNewRegistroModal()">
+                <span>+</span>
+            </button>
+        </div>
+
+        <!-- Bottom Navigation -->
+        <div class="bottom-nav">
+            <button id="nav-home" class="nav-item active" onclick="showScreen('main')">
+                <span class="nav-icon">🏠</span>
+                <span class="nav-label">Inicio</span>
+            </button>
+            <button id="nav-profile" class="nav-item" onclick="showScreen('profile')">
+                <span class="nav-icon">👤</span>
+                <span class="nav-label">Perfil</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ========== PROFILE SCREEN ========== -->
+    <div id="profile-screen" class="screen">
+        <div class="header">
+            <button class="btn-icon" onclick="showScreen('main')">←</button>
+            <div class="institucional">
+                <h1>Mi Perfil</h1>
+            </div>
+        </div>
+
+        <div class="content-container">
+            <div class="profile-card">
+                <div class="profile-avatar">
+                    <span id="profile-initials">U</span>
+                </div>
+                <h2 id="profile-name">Nombre Usuario</h2>
+                <p id="profile-email">email@ejemplo.com</p>
+                <div class="profile-badge" id="profile-role">Usuario</div>
+            </div>
+
+            <div class="stats-grid" id="profile-stats"></div>
+
+            <button class="btn btn-danger" onclick="logout()">
+                <span>🚪 Cerrar Sesión</span>
+            </button>
+        </div>
+
+        <!-- Bottom Navigation -->
+        <div class="bottom-nav">
+            <button id="nav-home-2" class="nav-item" onclick="showScreen('main')">
+                <span class="nav-icon">🏠</span>
+                <span class="nav-label">Inicio</span>
+            </button>
+            <button id="nav-profile-2" class="nav-item active" onclick="showScreen('profile')">
+                <span class="nav-icon">👤</span>
+                <span class="nav-label">Perfil</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ========== MODALS ========== -->
+    
+    <!-- New Record Modal -->
+    <div id="new-registro-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Nuevo Registro</h3>
+                <button class="btn-close" onclick="closeNewRegistroModal()">✕</button>
+            </div>
+            <form id="new-registro-form">
+                <div class="form-grid">
+                    <div>
+                        <label>Tipo de Documento</label>
+                        <select id="new-tipo" required>
+                            <option value="nota">Nota</option>
+                            <option value="informe">Informe</option>
+                            <option value="expediente">Expediente</option>
+                            <option value="acta">Acta</option>
+                            <option value="circular">Circular</option>
+                            <option value="cap">CAP</option>
+                            <option value="otro">Otro</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Fecha</label>
+                        <input type="date" id="new-fecha" required>
+                    </div>
+                    <div>
+                        <label>Destinatario</label>
+                        <input type="text" id="new-destinatario" placeholder="Ej: Dirección General" required>
+                    </div>
+                    <div>
+                        <label>Asunto</label>
+                        <textarea id="new-asunto" placeholder="Descripción del documento" required></textarea>
+                    </div>
+                    <div>
+                        <label>Nº Expediente/Nota</label>
+                        <input type="text" id="new-numero" placeholder="Ej: EXP-2024-001">
+                    </div>
+                    <div>
+                        <label>Observaciones</label>
+                        <textarea id="new-observaciones" placeholder="Observaciones adicionales"></textarea>
+                    </div>
+                    <div>
+                        <label>Adjuntos (opcional)</label>
+                        <input type="file" id="new-adjuntos" multiple accept="image/*,.pdf,.doc,.docx">
+                        <div id="file-list-container" class="file-list"></div>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeNewRegistroModal()">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        Guardar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Record Modal -->
+    <div id="edit-registro-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Editar Registro</h3>
+                <button class="btn-close" onclick="closeEditRegistroModal()">✕</button>
+            </div>
+            <form id="edit-registro-form">
+                <input type="hidden" id="edit-id">
+                <div class="form-grid">
+                    <div>
+                        <label>Tipo de Documento</label>
+                        <select id="edit-tipo" required>
+                            <option value="nota">Nota</option>
+                            <option value="informe">Informe</option>
+                            <option value="expediente">Expediente</option>
+                            <option value="acta">Acta</option>
+                            <option value="circular">Circular</option>
+                            <option value="cap">CAP</option>
+                            <option value="otro">Otro</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Fecha</label>
+                        <input type="date" id="edit-fecha" required>
+                    </div>
+                    <div>
+                        <label>Destinatario</label>
+                        <input type="text" id="edit-destinatario" required>
+                    </div>
+                    <div>
+                        <label>Asunto</label>
+                        <textarea id="edit-asunto" required></textarea>
+                    </div>
+                    <div>
+                        <label>Nº Expediente/Nota</label>
+                        <input type="text" id="edit-numero">
+                    </div>
+                    <div>
+                        <label>Observaciones</label>
+                        <textarea id="edit-observaciones"></textarea>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeEditRegistroModal()">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        Actualizar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Detail Modal -->
+    <div id="detail-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Detalle del Registro</h3>
+                <button class="btn-close" onclick="closeDetailModal()">✕</button>
+            </div>
+            <div id="detail-content"></div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeDetailModal()">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Modal -->
+    <div id="stats-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Estadísticas</h3>
+                <button class="btn-close" onclick="closeStatsModal()">✕</button>
+            </div>
+            <div id="stats-content" class="stats-grid"></div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeStatsModal()">
+                    Cerrar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="firebase-config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
